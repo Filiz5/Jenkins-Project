@@ -7,6 +7,7 @@ pipeline {
         ECR_REPO_NAME2 = 'postgres-image'
         ECR_REPO_NAME3 = 'react-images'
         DOCKER_IMAGE_TAG = "${env.BUILD_NUMBER}"
+        PUBLIC_IP = ""
     }
     stages {
         stage('Create Infra') {
@@ -17,15 +18,6 @@ pipeline {
                     terraform init
                     terraform apply -auto-approve
                     '''
-                }
-            }
-        }
-
-        stage('Wait for Image Push') {
-            steps {
-                script {
-                    // Docker image'ların ECR'a itilmesinden sonra bekleme
-                    sleep time: 30, unit: 'SECONDS'
                 }
             }
         }
@@ -121,12 +113,22 @@ pipeline {
             }
         }
 
+        stage('Get EC2 Public IP') {
+            steps {
+                script {
+                    // EC2 instance'ın public IP'sini alıyoruz
+                    PUBLIC_IP = sh(script: "aws ec2 describe-instances --filters Name=instance-state-name,Values=running --query 'Reservations[*].Instances[*].PublicIpAddress' --output text", returnStdout: true).trim()
+                    echo "EC2 Public IP: ${PUBLIC_IP}"
+                }
+            }
+        }
+
         stage('Deploy App with Ansible') {
             steps {
                 script {
                     // Ansible playbook kullanarak deploy
                     sh '''
-                    ansible-playbook -i /home/ec2-user/inventory_aws_ec2.yml playbook.yaml
+                    ansible-playbook -i ${PUBLIC_IP}, playbook.yaml --extra-vars "public_ip=${PUBLIC_IP}"
                     '''
                 }
             }

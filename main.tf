@@ -1,21 +1,28 @@
-provider "aws" {
-  region  = "us-east-1"
-  version = "~> 5.45.0"
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.45.0"
+    }
+  }
 }
 
+provider "aws" {
+  region = "us-east-1"
+}
 
 resource "aws_instance" "jenkins_instance" {
   ami           = "ami-0230bd60aa48260c6"
-  instance_type = var.ins-type
+  instance_type = var.ins_type  # Variable name corrected
   key_name      = var.key
-  user_data = file("userdata.sh")
+  user_data     = file("userdata.sh")
   iam_instance_profile = "jenkins-project-profile-techpro"
 
   tags = {
     Name = "jenkins_project"
   }
 
-  security_groups = [aws_security_group.jenkins_sec_group.name]
+  vpc_security_group_ids = [aws_security_group.jenkins_sec_group.id]  # Use security group ID instead of name
 
   associate_public_ip_address = true
 }
@@ -66,6 +73,11 @@ resource "aws_security_group" "jenkins_sec_group" {
 }
 
 output "node_public_ip" {
-  value = aws_instance.jenkins_instance.public_ip
+  value       = aws_instance.jenkins_instance.public_ip
   description = "The public IP of the Jenkins EC2 instance"
+}
+
+output "instance_id" {
+  value = aws_instance.jenkins_instance.id
+  description = "The ID of the Jenkins EC2 instance"
 }

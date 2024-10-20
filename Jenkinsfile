@@ -7,6 +7,7 @@ pipeline {
         ECR_REPO_NAME2 = 'postgres-image'
         ECR_REPO_NAME3 = 'react-images'
         DOCKER_IMAGE_TAG = "${env.BUILD_NUMBER}"
+        EC2_INSTANCE_ID = '' // EC2 instance ID'si daha sonra atanacak
     }
 
     stages {
@@ -46,41 +47,29 @@ pipeline {
             }
         }
 
-        stage('Build and Push App 1 Docker Image') {
+        stage('Build and Push Docker Images') {
             steps {
                 script {
                     // App1 için Docker image oluşturma ve ECR'a gönderme
-                    dir('nodejs') { // App1 dosyalarının bulunduğu klasör
+                    dir('nodejs') {
                         sh '''
                         docker build -t ${ECR_REPO_NAME1}:${DOCKER_IMAGE_TAG} .
                         docker tag ${ECR_REPO_NAME1}:${DOCKER_IMAGE_TAG} ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO_NAME1}:${DOCKER_IMAGE_TAG}
                         docker push ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO_NAME1}:${DOCKER_IMAGE_TAG}
                         '''
                     }
-                }
-            }
-        }
 
-        stage('Build and Push App 2 Docker Image') {
-            steps {
-                script {
                     // App2 için Docker image oluşturma ve ECR'a gönderme
-                    dir('postgresql') { // App2 dosyalarının bulunduğu klasör
+                    dir('postgresql') {
                         sh '''
                         docker build -t ${ECR_REPO_NAME2}:${DOCKER_IMAGE_TAG} .
                         docker tag ${ECR_REPO_NAME2}:${DOCKER_IMAGE_TAG} ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO_NAME2}:${DOCKER_IMAGE_TAG}
                         docker push ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO_NAME2}:${DOCKER_IMAGE_TAG}
                         '''
                     }
-                }
-            }
-        }
 
-        stage('Build and Push App 3 Docker Image') {
-            steps {
-                script {
                     // App3 için Docker image oluşturma ve ECR'a gönderme
-                    dir('react') { // App3 dosyalarının bulunduğu klasör
+                    dir('react') {
                         sh '''
                         docker build -t ${ECR_REPO_NAME3}:${DOCKER_IMAGE_TAG} .
                         docker tag ${ECR_REPO_NAME3}:${DOCKER_IMAGE_TAG} ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO_NAME3}:${DOCKER_IMAGE_TAG}
@@ -91,24 +80,42 @@ pipeline {
             }
         }
 
-        stage('Wait for Image Push') {
+        stage('Get EC2 Public IP') {
             steps {
-                // Docker image'ların ECR'a itilmesinden sonra bekleme
                 script {
-                    sleep time: 30, unit: 'SECONDS'
+                    // EC2 instance ID'sini buluyoruz
+                    def instanceId = sh(script: "aws ec2 describe-instances --filters Name=instance-state-name,Values=running --query 'Reservations[0].Instances[0].InstanceId' --output text", returnStdout: true).trim()
+                    env.EC2_INSTANCE_ID = instanceId
+
+                    // EC2 instance'ın Public IP'sini alıyoruz
+                    def publicIP = sh(script: "aws ec2 describe-instances --instance-id ${EC2_INSTANCE_ID} --query 'Reservations[0].Instances[0].PublicIpAddress' --output text", returnStdout: true).trim()
+                    echo "EC2 Instance Public IP: ${publicIP}"
+                    
+                    // Public IP'yi ortam değişkenine atıyoruz
+                    env.PUBLIC_IP = publicIP
                 }
             }
         }
 
-        stage('Deploy App with Ansible') {
+        stage('Run Docker Compose on EC2') {
             steps {
                 script {
-                    // Ansible playbook kullanarak deploy
-                    sh '''
-                    ansible-playbook -i /home/ec2-user/inventory_aws_ec2.yml playbook.yaml
-                    '''
+                    // EC2'ye SSH ile bağlanıp Docker Compose'u Public IP ile çalıştırma
+                    sh """
+                    ssh -i /path/to/your/key.pem ec2-user@${env.PUBLIC_IP} '
+                    export PUBLIC_IP=${env.PUBLIC_IP} && 
+                    cd /path/to/your/docker-compose-dir &&
+                    docker-compose -f docker-compose.yml up -d
+                    '
+                    """
                 }
             }
+        }
+    }
+
+    post {
+        always {
+            echo "Pipeline completed."
         }
     }
 }

@@ -8,11 +8,11 @@ pipeline {
         ECR_REPO_NAME3 = 'react-images'
         DOCKER_IMAGE_TAG = "${env.BUILD_NUMBER}"
     }
-
     stages {
         stage('Create Infra') {
             steps {
                 script {
+                    // Terraform key ve altyapı oluşturma
                     sh '''
                     terraform init
                     terraform apply -auto-approve
@@ -21,13 +21,45 @@ pipeline {
             }
         }
 
+        stage('Wait for Image Push') {
+            steps {
+                script {
+                    // Docker image'ların ECR'a itilmesinden sonra bekleme
+                    sleep time: 30, unit: 'SECONDS'
+                }
+            }
+        }
+
+        stage('Wait for EC2 3/3 Status Checks') {
+            steps {
+                script {
+                    // EC2 instance ID'yi al (output olarak main.tf dosyasından instance id'yi almalısın)
+                    def instanceId = sh(script: "terraform output -raw instance_id", returnStdout: true).trim()
+
+                    // AWS CLI kullanarak status check kontrolü
+                    def statusCheckPassed = false
+                    while (!statusCheckPassed) {
+                        def status = sh(script: "aws ec2 describe-instance-status --instance-id ${instanceId} --query 'InstanceStatuses[0].InstanceStatus.Status' --output text", returnStdout: true).trim()
+
+                        if (status == "ok") {
+                            statusCheckPassed = true
+                        } else {
+                            echo "EC2 instance is not ready yet. Waiting for 30 seconds..."
+                            sleep(time: 30, unit: "SECONDS")
+                        }
+                    }
+                }
+            }
+        }
+
         stage('Create ECR Repos') {
             steps {
                 script {
+                    // Her ECR reposu için repo oluşturma
                     sh '''
-                    aws ecr create-repository --repository-name ${ECR_REPO_NAME1} --region ${AWS_REGION} || echo "Repo 1 already exists"
-                    aws ecr create-repository --repository-name ${ECR_REPO_NAME2} --region ${AWS_REGION} || echo "Repo 2 already exists"
-                    aws ecr create-repository --repository-name ${ECR_REPO_NAME3} --region ${AWS_REGION} || echo "Repo 3 already exists"
+                    aws ecr create-repository --repository-name ${ECR_REPO_NAME1} --region ${AWS_REGION} || echo "Repo 1 zaten mevcut"
+                    aws ecr create-repository --repository-name ${ECR_REPO_NAME2} --region ${AWS_REGION} || echo "Repo 2 zaten mevcut"
+                    aws ecr create-repository --repository-name ${ECR_REPO_NAME3} --region ${AWS_REGION} || echo "Repo 3 zaten mevcut"
                     '''
                 }
             }
@@ -36,6 +68,7 @@ pipeline {
         stage('Login to ECR') {
             steps {
                 script {
+                    // AWS ECR login işlemi
                     sh '''
                     aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
                     '''
@@ -43,69 +76,58 @@ pipeline {
             }
         }
 
-        stage('Build and Push Docker Images') {
-            parallel {
-                stage('Node.js Image') {
-                    steps {
-                        script {
-                            dir('nodejs') {
-                                sh '''
-                                docker build -t ${ECR_REPO_NAME1}:${DOCKER_IMAGE_TAG} .
-                                docker tag ${ECR_REPO_NAME1}:${DOCKER_IMAGE_TAG} ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO_NAME1}:${DOCKER_IMAGE_TAG}
-                                docker push ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO_NAME1}:${DOCKER_IMAGE_TAG}
-                                '''
-                            }
-                        }
-                    }
-                }
-                stage('PostgreSQL Image') {
-                    steps {
-                        script {
-                            dir('postgresql') {
-                                sh '''
-                                docker build -t ${ECR_REPO_NAME2}:${DOCKER_IMAGE_TAG} .
-                                docker tag ${ECR_REPO_NAME2}:${DOCKER_IMAGE_TAG} ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO_NAME2}:${DOCKER_IMAGE_TAG}
-                                docker push ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO_NAME2}:${DOCKER_IMAGE_TAG}
-                                '''
-                            }
-                        }
-                    }
-                }
-                stage('React Image') {
-                    steps {
-                        script {
-                            dir('react') {
-                                sh '''
-                                docker build -t ${ECR_REPO_NAME3}:${DOCKER_IMAGE_TAG} .
-                                docker tag ${ECR_REPO_NAME3}:${DOCKER_IMAGE_TAG} ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO_NAME3}:${DOCKER_IMAGE_TAG}
-                                docker push ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO_NAME3}:${DOCKER_IMAGE_TAG}
-                                '''
-                            }
-                        }
+        stage('Build and Push App 1 Docker Image') {
+            steps {
+                script {
+                    // App1 için Docker image oluşturma ve ECR'a gönderme
+                    dir('nodejs') {
+                        sh '''
+                        docker build -t ${ECR_REPO_NAME1}:${DOCKER_IMAGE_TAG} .
+                        docker tag ${ECR_REPO_NAME1}:${DOCKER_IMAGE_TAG} ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO_NAME1}:${DOCKER_IMAGE_TAG}
+                        docker push ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO_NAME1}:${DOCKER_IMAGE_TAG}
+                        '''
                     }
                 }
             }
         }
 
-        stage('Get EC2 Public IP') {
+        stage('Build and Push App 2 Docker Image') {
             steps {
                 script {
-                    env.EC2_PUBLIC_IP = sh(script: '''
-                    aws ec2 describe-instances --filters Name=instance-state-name,Values=running --query 'Reservations[0].Instances[0].PublicIpAddress' --output text
-                    ''', returnStdout: true).trim()
+                    // App2 için Docker image oluşturma ve ECR'a gönderme
+                    dir('postgresql') {
+                        sh '''
+                        docker build -t ${ECR_REPO_NAME2}:${DOCKER_IMAGE_TAG} .
+                        docker tag ${ECR_REPO_NAME2}:${DOCKER_IMAGE_TAG} ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO_NAME2}:${DOCKER_IMAGE_TAG}
+                        docker push ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO_NAME2}:${DOCKER_IMAGE_TAG}
+                        '''
+                    }
                 }
             }
         }
 
-        stage('Run Docker Compose on EC2') {
+        stage('Build and Push App 3 Docker Image') {
             steps {
                 script {
-                    sh """
-                    ssh -o StrictHostKeyChecking=no -i /path/to/Meliskey.pem ec2-user@${env.EC2_PUBLIC_IP} '
-                    cd /path/to/your/docker/compose/directory &&
-                    docker-compose up -d
-                    '
-                    """
+                    // App3 için Docker image oluşturma ve ECR'a gönderme
+                    dir('react') {
+                        sh '''
+                        docker build -t ${ECR_REPO_NAME3}:${DOCKER_IMAGE_TAG} .
+                        docker tag ${ECR_REPO_NAME3}:${DOCKER_IMAGE_TAG} ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO_NAME3}:${DOCKER_IMAGE_TAG}
+                        docker push ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO_NAME3}:${DOCKER_IMAGE_TAG}
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Deploy App with Ansible') {
+            steps {
+                script {
+                    // Ansible playbook kullanarak deploy
+                    sh '''
+                    ansible-playbook -i /home/ec2-user/inventory_aws_ec2.yml playbook.yaml
+                    '''
                 }
             }
         }

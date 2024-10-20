@@ -1,3 +1,5 @@
+version: '3.8'
+
 services:
   postgres:
     image: public.ecr.aws/m6q2o4x8/postgre:latest
@@ -10,6 +12,8 @@ services:
       - 5432:5432
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    networks:
+      - jenkinsproject
 
   backend:
     image: public.ecr.aws/m6q2o4x8/nodejs:latest
@@ -25,19 +29,25 @@ services:
       - 5000:5000
     depends_on:
       - postgres
+    networks:
+      - jenkinsproject
     command: bash -c "npm install && npm run start"
-
 
   frontend:
     image: public.ecr.aws/m6q2o4x8/react:latest
     container_name: todo_frontend
     environment:
-      REACT_APP_BASE_URL: http://35.171.47.151:5000/
+      REACT_APP_BASE_URL: ${PUBLIC_IP}:5000
     ports:
       - 3000:3000
+    depends_on:
+      - backend
+    networks:
+      - jenkinsproject
     command: bash -c "npm install && npm start"
-      
+
 volumes:
   postgres_data:
+
 networks:
   jenkinsproject:

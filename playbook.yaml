@@ -1,0 +1,82 @@
+- name: Jenkins Project Setup Playbook
+  hosts: all
+  become: yes
+  tasks:
+    - name: Update system packages
+      yum:
+        name: "*"
+        state: latest
+      tags: update
+
+    - name: Remove old Docker versions
+      yum:
+        name:
+          - docker
+          - docker-client
+          - docker-client-latest
+          - docker-common
+          - docker-latest
+          - docker-latest-logrotate
+          - docker-logrotate
+          - docker-engine
+        state: absent
+      tags: remove_old_docker
+
+    - name: Install yum utilities
+      yum:
+        name:
+          - yum-utils
+          - device-mapper-persistent-data
+          - lvm2
+          - unzip
+        state: present
+      tags: install_utilities
+
+    - name: Install Docker
+      yum:
+        name: docker
+        state: present
+      tags: install_docker
+
+    - name: Add ec2-user to the docker group
+      user:
+        name: ec2-user
+        groups: docker
+        append: yes
+      tags: add_user_to_docker
+
+    - name: Start Docker service
+      systemd:
+        name: docker
+        enabled: yes
+        state: started
+      tags: start_docker
+
+    - name: Install Docker Compose
+      get_url:
+        url: "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-{{ ansible_system }}-{{ ansible_architecture }}"
+        dest: /usr/local/bin/docker-compose
+        mode: '0755'
+      tags: install_docker_compose
+
+    - name: Ensure Docker Compose executable has correct permissions
+      file:
+        path: /usr/local/bin/docker-compose
+        mode: '0755'
+        owner: root
+        group: root
+      tags: set_docker_compose_permissions
+
+    - name: Copy docker-compose.yaml to server
+      copy:
+        src: ./docker-compose.yaml
+        dest: /home/ec2-user/docker-compose.yaml
+        owner: ec2-user
+        mode: '0644'
+      tags: copy_compose_file
+
+    - name: Start application with Docker Compose
+      command: /usr/local/bin/docker-compose -f /home/ec2-user/docker-compose.yaml up -d
+      args:
+        chdir: /home/ec2-user/
+      tags: start_application

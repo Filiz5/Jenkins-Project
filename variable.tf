@@ -6,6 +6,6 @@ variable "user" {
   default = "techpro"
 }
 
-variable "ins-type" {
+variable "ins_type" {
   default = "t3a.medium"
 }

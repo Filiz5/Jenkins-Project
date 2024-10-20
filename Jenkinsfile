@@ -101,7 +101,7 @@ pipeline {
             steps {
                 script {
                     sh """
-                    ssh -o StrictHostKeyChecking=no -i /path/to/your/key.pem ec2-user@${env.EC2_PUBLIC_IP} '
+                    ssh -o StrictHostKeyChecking=no -i /path/to/Meliskey.pem ec2-user@${env.EC2_PUBLIC_IP} '
                     cd /path/to/your/docker/compose/directory &&
                     docker-compose up -d
                     '

@@ -1,6 +1,9 @@
+---
 - name: Jenkins Project Setup Playbook
   hosts: all
   become: yes
+  vars:
+    public_ip: "{{ public_ip }}"
   tasks:
     - name: Update system packages
       yum:
@@ -54,7 +57,7 @@
 
     - name: Install Docker Compose
       get_url:
-        url: "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-{{ ansible_system }}-{{ ansible_architecture }}"
+        url: "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-linux-{{ ansible_architecture }}"
         dest: /usr/local/bin/docker-compose
         mode: '0755'
       tags: install_docker_compose
@@ -74,6 +77,13 @@
         owner: ec2-user
         mode: '0644'
       tags: copy_compose_file
+
+    - name: Update REACT_APP_BASE_URL in docker-compose.yml
+      replace:
+        path: /home/ec2-user/docker-compose.yaml
+        regexp: 'REACT_APP_BASE_URL: http://.*:5000/'
+        replace: "REACT_APP_BASE_URL: http://{{ public_ip }}:5000/"
+      tags: update_compose
 
     - name: Start application with Docker Compose
       command: /usr/local/bin/docker-compose -f /home/ec2-user/docker-compose.yaml up -d

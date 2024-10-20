@@ -37,7 +37,7 @@ services:
     image: public.ecr.aws/m6q2o4x8/react:latest
     container_name: todo_frontend
     environment:
-      REACT_APP_BASE_URL: ${PUBLIC_IP}:5000
+      REACT_APP_BASE_URL: http://${PUBLIC_IP}:5000/
     ports:
       - 3000:3000
     depends_on:

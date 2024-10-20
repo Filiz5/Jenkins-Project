@@ -8,7 +8,7 @@ resource "aws_instance" "jenkins_instance" {
   ami           = "ami-0230bd60aa48260c6"
   instance_type = var.ins-type
   key_name      = var.key
-
+  user_data = file("userdata.sh")
   iam_instance_profile = "jenkins-project-profile-techpro"
 
   tags = {
